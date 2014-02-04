@@ -1,4 +1,9 @@
 # Twitter module for Kohanaphp
+## Modification from original
+
+* Kohana 3.3
+* Api from 1.0 to 1.1
+* Remove modification/writing capabilities, let only reading capabilities
 
 ## Create Twitter app
 
@@ -14,14 +19,21 @@
 
 
 ## Use
-    
+
     $twitter = new Twitter();
     
-    $status = $twitter->send('my message');
-    
-    echo $status ? 'OK': 'ERROR';
+### Load
 
+(see [https://dev.twitter.com/docs/api/1.1)
 
+    $load = $twitter->load(Twitter::MENTIONS,optional count);
+or
+    $load = $twitter->load(Twitter::USER,'optional user',optional count);
+or
+    $load = $twitter->load(Twitter::HOME,optional count);
 
-[![Bitdeli Badge](https://d2weczhvl823v0.cloudfront.net/madeinnordeste/kohana-twitter/trend.png)](https://bitdeli.com/free "Bitdeli Badge")
+### Search
+
+    $load = twitter->search('@myserch #mysearch');
+
 

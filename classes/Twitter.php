@@ -18,18 +18,9 @@ require Kohana::find_file('vendor', 'OAuth');
 class Twitter
 {
 	/**#@+ Timeline {@link Twitter::load()} */
-	const ME = 1;
-	const ME_AND_FRIENDS = 2;
-	const REPLIES = 3;
-	const ALL = 4;
-	const RETWEETS = 128; // include retweets?
-	/**#@-*/
-
-	/**#@+ Output format {@link Twitter::load()} */
-	const XML = 0;
-	const JSON = 16;
-	const RSS = 32;
-	const ATOM = 48;
+	const MENTIONS = 'mentions';
+	const USER = 'user';
+	const HOME = 'home';
 	/**#@-*/
 
 	/** @var int */
@@ -65,19 +56,20 @@ class Twitter
 		
 		//default keys
 		if(is_null($consumerKey)){
-		    $consumerKey = Kohana::config('twitter.consumerKey');
+		    // $consumerKey = Kohana::config('twitter.consumerKey');
+		    $consumerKey = Kohana::$config->load('twitter.consumerKey');
 		}
 		
 		if(is_null($consumerSecret)){
-		    $consumerSecret = Kohana::config('twitter.consumerSecret');
+		    $consumerSecret = Kohana::$config->load('twitter.consumerSecret');
 		}
 		
 		if(is_null($accessToken)){
-		    $accessToken = Kohana::config('twitter.accessToken');
+		    $accessToken = Kohana::$config->load('twitter.accessToken');
 		} 
 		
 		if(is_null($accessTokenSecret)){
-		    $accessTokenSecret = Kohana::config('twitter.accessTokenSecret');
+		    $accessTokenSecret = Kohana::$config->load('twitter.accessTokenSecret');
 		}
 		
 		
@@ -109,79 +101,28 @@ class Twitter
 	}
 
 
-
-	/**
-	 * Sends message to the Twitter.
-	 * @param string   message encoded in UTF-8
-	 * @return mixed   ID on success or FALSE on failure
-	 * @throws TwitterException
-	 */
-	public function send($message)
-	{
-		if (iconv_strlen($message, 'UTF-8') > 140) {
-			$message = preg_replace_callback('#https?://\S+[^:);,.!?\s]#', array($this, 'shortenUrl'), $message);
-		}
-
-		$res = $this->request('statuses/update', array('status' => $message));
-		return $res->id ? (string) $res->id : FALSE;
-	}
-
-
-
 	/**
 	 * Returns the most recent statuses.
-	 * @param  int    timeline (ME | ME_AND_FRIENDS | REPLIES | ALL) and optional (RETWEETS) or format (XML | JSON | RSS | ATOM)
+	 * @param  const
 	 * @param  int    number of statuses to retrieve
 	 * @param  int    page of results to retrieve
 	 * @return mixed
 	 * @throws TwitterException
 	 */
-	public function load($flags = self::ME, $count = 20, $page = 1)
+	public function load($timeline = self::USER, $screen_name = NULL, $count = 20)
 	{
-		static $timelines = array(self::ME => 'user_timeline', self::ME_AND_FRIENDS => 'friends_timeline', self::REPLIES => 'mentions', self::ALL => 'public_timeline');
+		static $timelines = array(self::USER => 'user_timeline', self::HOME => 'home_timeline', self::MENTIONS => 'mentions_timeline');
 
-		if (!is_int($flags)) { // back compatibility
-			$flags = $flags ? self::ME_AND_FRIENDS : self::ME;
+		if (!array_key_exists($timeline,$timelines)) {
+			$timeline = self::USER;
+		} 
 
-		} elseif (!isset($timelines[$flags & 0x0F])) {
-			throw new InvalidArgumentException;
-		}
-
-		return $this->cachedRequest('statuses/' . $timelines[$flags & 0x0F] . '.' . self::getFormat($flags), array(
+		return $this->cachedRequest('statuses/' . $timelines[$timeline] . '.json', array(
 			'count' => $count,
-			'page' => $page,
-			'include_rts' => $flags & self::RETWEETS ? 1 : 0,
+			'screen_name' => $screen_name,
+			'include_rts' => 1,
 		));
 	}
-
-
-
-	/**
-	 * Returns information of a given user.
-	 * @param  string name
-	 * @param  int    format (XML | JSON)
-	 * @return mixed
-	 * @throws TwitterException
-	 */
-	public function loadUserInfo($user, $flags = self::XML)
-	{
-		return $this->cachedRequest('users/show.' . self::getFormat($flags), array('screen_name' => $user));
-	}
-
-
-
-	/**
-	 * Destroys status.
-	 * @param  int    id of status to be destroyed
-	 * @return mixed
-	 * @throws TwitterException
-	 */
-	public function destroy($id)
-	{
-		$res = $this->request("statuses/destroy/$id");
-		return $res->id ? (string) $res->id : FALSE;
-	}
-
 
 
 	/**
@@ -191,13 +132,13 @@ class Twitter
 	 * @return mixed
 	 * @throws TwitterException
 	 */
-	public function search($query, $flags = self::JSON)
+	public function search($query)
 	{
-		return $this->request(
-			'http://search.twitter.com/search.' . self::getFormat($flags),
+		return $this->cachedRequest(
+			'search/tweets.json',
 			is_array($query) ? $query : array('q' => $query),
 			'GET'
-		)->results;
+		)->statuses;
 	}
 
 
@@ -216,7 +157,7 @@ class Twitter
 			if (!strpos($request, '.')) {
 				$request .= '.json';
 			}
-			$request = 'http://api.twitter.com/1/' . $request;
+			$request = 'https://api.twitter.com/1.1/' . $request;
 		}
 
 		$request = OAuthRequest::from_consumer_and_token($this->consumer, $this->token, $method, $request, $data);
@@ -238,7 +179,6 @@ class Twitter
 		}
 
 		$result = curl_exec($curl); 
-		
 		//echo Kohana::debug($result);
 		
 		if (curl_errno($curl)) {
@@ -246,10 +186,7 @@ class Twitter
 		}
 
 		$type = curl_getinfo($curl, CURLINFO_CONTENT_TYPE);
-		if (strpos($type, 'xml')) {
-			$payload = @simplexml_load_string($result); // intentionally @
-
-		} elseif (strpos($type, 'json')) {
+		if (strpos($type, 'json')) {
 			$payload = @json_decode($result); // intentionally @
 		}
 
