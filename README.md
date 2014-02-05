@@ -2,8 +2,10 @@
 ## Modification from original
 
 * Kohana 3.3
-* Api from 1.0 to 1.1
+* Api from 1.0 to 1.1 
+* Only json format as it is in 1.1
 * Remove modification/writing capabilities, let only reading capabilities
+* Some new useful functions for url replace in result
 
 ## Create Twitter app
 
@@ -21,19 +23,16 @@
 ## Use
 
     $twitter = new Twitter();
-    
-### Load
 
-(see [https://dev.twitter.com/docs/api/1.1)
+    $type = 'search'; // or 'home' or 'mentions' or 'user'
+    $options = array('count' => 20,'q' => '@kohana #php'); 
 
-    $load = $twitter->load(Twitter::MENTIONS,optional count);
-or
-    $load = $twitter->load(Twitter::USER,'optional user',optional count);
-or
-    $load = $twitter->load(Twitter::HOME,optional count);
+    $load = $twitter->get($type,$options);
 
-### Search
+## Api Type & Options 
 
-    $load = twitter->search('@myserch #mysearch');
+(see [https://dev.twitter.com/docs/api/1.1) for possible options. 
+Only few options are for now supported as I don't need more right now. 
+For new options update config/twitter-api.php and eventually send a pull request.
 
 

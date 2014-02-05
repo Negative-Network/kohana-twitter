@@ -17,11 +17,9 @@ require Kohana::find_file('vendor', 'OAuth');
  
 class Twitter
 {
-	/**#@+ Timeline {@link Twitter::load()} */
-	const MENTIONS = 'mentions';
-	const USER = 'user';
-	const HOME = 'home';
-	/**#@-*/
+
+	const GETDEFAULT = 'user';
+	private $default_req;
 
 	/** @var int */
 	public static $cacheExpire = 1800; // 30 min
@@ -38,7 +36,7 @@ class Twitter
 	/** @var OAuthConsumer */
 	private $token;
 
-
+	private $api;
 
 	/**
 	 * Creates object using consumer and access keys.
@@ -73,10 +71,12 @@ class Twitter
 		}
 		
 		
-
 		$this->signatureMethod = new OAuthSignatureMethod_HMAC_SHA1();
 		$this->consumer = new OAuthConsumer($consumerKey, $consumerSecret);
 		$this->token = new OAuthConsumer($accessToken, $accessTokenSecret);
+
+		$this->api = Kohana::$config->load('twitter-api.api');
+		$this->default_req = Kohana::$config->load('twitter-api.default');
 	}
 
 
@@ -109,22 +109,89 @@ class Twitter
 	 * @return mixed
 	 * @throws TwitterException
 	 */
-	public function load($timeline = self::USER, $screen_name = NULL, $count = 20)
+	public function get($req = self::GETDEFAULT, $options = NULL)
 	{
-		static $timelines = array(self::USER => 'user_timeline', self::HOME => 'home_timeline', self::MENTIONS => 'mentions_timeline');
 
-		if (!array_key_exists($timeline,$timelines)) {
-			$timeline = self::USER;
+		if (!array_key_exists($req,$this->api)) {
+			$req = $this->get_default_req();
 		} 
+		$result = $this->cachedRequest($this->get_api_uri($req), $options);
 
-		return $this->cachedRequest('statuses/' . $timelines[$timeline] . '.json', array(
-			'count' => $count,
-			'screen_name' => $screen_name,
-			'include_rts' => 1,
-		));
+		if (isset($result->errors))
+		{
+			return false;
+		}
+		elseif ($return_index = $this->get_return_index($req))
+		{
+			return $result->$return_index;
+		}
+		else
+		{
+			return $result;
+		}
+
+	}
+
+	public function get_default_req()
+	{
+		if ($this->default_req) 
+		{
+			return $this->default_req;
+		}
+		else 
+		{
+			return self::GETDEFAULT;
+		}
+		
+	}
+
+	public function get_api(){
+		if (isset($this->api))
+		{
+			return $this->api;
+		}
+		return false;
+	}
+
+	public function get_available_options($request){
+		if (!array_key_exists($request,$this->api)) {
+			$request = $this->get_default_req();
+		}
+		if (isset($this->api[$request]))
+		{
+			if (isset($this->api[$request]['valid-options']))
+			{
+				return $this->api[$request]['valid-options'];
+			}
+		}
+		return false;
+	}
+
+	public function get_api_uri($request){
+		if (!array_key_exists($request,$this->api)) {
+			$request = $this->get_default_req();
+		}
+		if (isset($this->api[$request]))
+		{
+			if (isset($this->api[$request]['api-uri']))
+			{
+				return $this->api[$request]['api-uri'];
+			}
+		}
+		return false;
 	}
 
 
+	public function get_return_index($request){
+		if (isset($this->api[$request]))
+		{
+			if (isset($this->api[$request]['return-index']))
+			{
+				return $this->api[$request]['return-index'];
+			}
+		}
+		return false;
+	}
 	/**
 	 * Returns tweets that match a specified query.
 	 * @param  string|array   query
@@ -275,38 +342,60 @@ class Twitter
 			return $m;
 		}
 	}
-
-
-
-	/**
-	 * Shortens URL using http://is.gd API.
-	 * @param  array
-	 * @return string
-	 */
-	private function shortenUrl($m)
+	
+	public function tweet_replace($tweet)
 	{
-		$curl = curl_init();
-		curl_setopt($curl, CURLOPT_URL, 'http://is.gd/api.php?longurl=' . urlencode($m[0]));
-		curl_setopt($curl, CURLOPT_HEADER, FALSE);
-		curl_setopt($curl, CURLOPT_TIMEOUT, 20);
-		curl_setopt($curl, CURLOPT_RETURNTRANSFER, TRUE);
-		$result = curl_exec($curl);
-		$code = curl_getinfo($curl, CURLINFO_HTTP_CODE);
-		return curl_errno($curl) || $code >= 400 ? $m[0] : $result;
+		$message = $tweet->text;
+		return $this->message_replace($message);
 	}
 
-
-
-	private static function getFormat($flag)
+	public function message_replace($message)
 	{
-		static $formats = array(self::XML => 'xml', self::JSON => 'json', self::RSS => 'rss', self::ATOM => 'atom');
-		$flag = $flag & 0x30;
-		if (isset($formats[$flag])) {
-			return $formats[$flag];
-		} else {
-			throw new InvalidArgumentException('Invalid format');
+		$message = $this->link_replace($message);
+		$message = $this->user_replace($message);
+		$message = $this->hash_replace($message);
+		return $message;
+	}
+
+	public function link_replace($message)
+	{
+		preg_match_all('^((https?|ftp|gopher|telnet|file|notes|ms-help):((//)|(\\\\))+[\w\d:#@%/;$()~_?\+-=\\\.&]*)^', $message, $urls);
+		if (count($urls) > 0)
+		{
+			foreach ($urls[0] as $i => $url) {
+				$message = str_replace($url, '<a target="_blank" href="'. $url .'">'. $url .'</a>', $message);
+			}
 		}
+
+		return $message;
 	}
+
+	public function user_replace($message)
+	{
+		preg_match_all('/(^|\s)@(\w+)/', $message, $names);
+		if (count($names) > 0)
+		{
+			foreach ($names[0] as $i => $name) {
+				$message = str_replace($name, '<a target="_blank" href="https://twitter.com/#!/'. ltrim($name, " @") .'">'. $name .'</a>', $message);
+			}
+		}
+
+		return $message;
+	}
+
+	public function hash_replace($message)
+	{
+		preg_match_all('^#([A-Za-z0-9_]+)^', $message, $tags);
+		if (count($tags) > 0)
+		{
+			foreach ($tags[0] as $i => $tag) {
+				$message = str_replace($tag, '<a target="_blank" href="http://search.twitter.com/search?q='. $tags[1][$i] .'">'. $tag .'</a>', $message);
+			}
+		}
+
+		return $message;
+	}
+
 
 }
 
