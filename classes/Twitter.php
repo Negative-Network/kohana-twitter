@@ -346,18 +346,18 @@ class Twitter
 	public function tweet_replace($tweet)
 	{
 		$message = $tweet->text;
-		return $this->message_replace($message);
+		return Twitter::message_replace($message);
 	}
 
-	public function message_replace($message)
+	public static function message_replace($message)
 	{
-		$message = $this->link_replace($message);
-		$message = $this->user_replace($message);
-		$message = $this->hash_replace($message);
+		$message = Twitter::link_replace($message);
+		$message = Twitter::user_replace($message);
+		$message = Twitter::hash_replace($message);
 		return $message;
 	}
 
-	public function link_replace($message)
+	public static function link_replace($message)
 	{
 		preg_match_all('^((https?|ftp|gopher|telnet|file|notes|ms-help):((//)|(\\\\))+[\w\d:#@%/;$()~_?\+-=\\\.&]*)^', $message, $urls);
 		if (count($urls) > 0)
@@ -370,7 +370,7 @@ class Twitter
 		return $message;
 	}
 
-	public function user_replace($message)
+	public static function user_replace($message)
 	{
 		preg_match_all('/(^|\s)@(\w+)/', $message, $names);
 		if (count($names) > 0)
@@ -383,7 +383,7 @@ class Twitter
 		return $message;
 	}
 
-	public function hash_replace($message)
+	public static function hash_replace($message)
 	{
 		preg_match_all('^#([A-Za-z0-9_]+)^', $message, $tags);
 		if (count($tags) > 0)
